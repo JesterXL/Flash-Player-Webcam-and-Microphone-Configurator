@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx" minWidth="955" minHeight="600"
+			   addedToStage="onAdded()"
+			   xmlns:controls="com.jxl.webcamrecord.controls.*" 
+			   xmlns:contexts="com.jxl.webcamrecord.robotlegs.contexts.*">
+	
+	<fx:Declarations>
+		<contexts:MainContext contextView="{this}" />
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import flash.debugger.enterDebugger;
+			
+			import mx.managers.PopUpManager;
+			
+			private function onAdded():void
+			{
+				this.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, onUncaughtError);
+				
+				PopUpManager.createPopUp(this, Debug, false);
+			}
+			
+			private function onUncaughtError(event:UncaughtErrorEvent):void
+			{
+				flash.debugger.enterDebugger();
+				Debug.error("Uncaught Error: " + event);
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<controls:MainView2 />
+	
+</s:Application>

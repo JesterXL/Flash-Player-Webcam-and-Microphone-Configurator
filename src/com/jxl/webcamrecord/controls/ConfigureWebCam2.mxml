@@ -1,0 +1,608 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" 
+		 width="100%" height="100%"
+		 currentState="main"
+		 creationComplete="onCreationComplete()">
+	
+	<fx:Script>
+		<![CDATA[
+			import com.jxl.webcamrecord.events.ConfigureWebCamEvent;
+			import com.jxl.webcamrecord.vo.CameraSettingsVO;
+			import com.jxl.webcamrecord.vo.MicrophoneSettingsVO;
+			import com.jxl.webcamrecord.vo.SettingsVO;
+			
+			import mx.collections.ArrayCollection;
+			
+			private var _currentCamera:Camera;
+			private var currentCameraDirty:Boolean = false;
+			private var cameraTimer:Timer;
+			private var cameraInfoText:String = "";
+			private var _currentMicrophone:Microphone;
+			private var currentMicrophoneDirty:Boolean = false;
+			private var microphoneInfoText:String = "";
+			private var _settings:SettingsVO;
+			private var settingsDirty:Boolean = false;
+			private var bytesValue:Number;
+			//private var _currentAudioCodec:String;
+			//private var currentAudioCodecDirty:Boolean = false;
+			
+			[Bindable]
+			public function get currentCamera():Camera { return _currentCamera; }
+			
+			public function set currentCamera(cam:Camera):void
+			{
+				_currentCamera = cam;
+				currentCameraDirty = true;
+				invalidateProperties();
+				var event:ConfigureWebCamEvent = new ConfigureWebCamEvent(ConfigureWebCamEvent.SELECTED_CAMERA_CHANGED);
+				event.camera = _currentCamera;
+				dispatchEvent(event);
+			}
+			
+			[Bindable]
+			public function get currentMicrophone():Microphone { return _currentMicrophone; }
+			
+			public function set currentMicrophone(mic:Microphone):void
+			{
+				_currentMicrophone = mic;
+				currentMicrophoneDirty = true;
+				invalidateProperties();
+				var event:ConfigureWebCamEvent = new ConfigureWebCamEvent(ConfigureWebCamEvent.SELECTED_MICROPHONE_CHANGED);
+				event.microphone = _currentMicrophone;
+				dispatchEvent(event);
+			}
+			
+			[Bindable]
+			public var cameras:ArrayCollection;
+			
+			[Bindable]
+			public var microphones:ArrayCollection;
+			
+			public function set settings(settings:SettingsVO):void
+			{
+				_settings = settings;
+				settingsDirty = true;
+				invalidateProperties();
+			}
+			
+			/*
+			public function get currentAudioCodec():String { return _currentAudioCodec; }
+			public function set currentAudioCodec(value:String):void
+			{
+				_currentAudioCodec = value;
+				currentAudioCodecDirty = true;
+				invalidateProperties();
+			}
+			*/
+			
+			private function onCreationComplete():void
+			{
+				startCameraTimer();
+			}
+			
+			override protected function commitProperties():void
+			{
+				var event:ConfigureWebCamEvent;
+				var camSettings:CameraSettingsVO;
+				var micSettings:MicrophoneSettingsVO;
+				super.commitProperties();
+				
+				if (currentCameraDirty)
+				{
+					currentCameraDirty = false;
+					updateControlGUIToCameraValues();
+					if (currentCamera)
+						camerasComboBox.selectedItem = currentCamera.name;
+					
+				}
+				
+				if (currentMicrophoneDirty)
+				{
+					currentMicrophoneDirty = false;
+					onSetAudioCodec();
+					updateControlGUIToCameraValues();
+					if (currentMicrophone)
+					{
+						microphonesComboBox.selectedItem = currentMicrophone.name;
+					}
+				}
+				
+				if (settingsDirty)
+				{
+					settingsDirty = false;
+					if (cameras != null && cameras.length > 0 || microphones != null && microphones.length > 0)
+					{
+						camSettings = _settings.cameraSettings;
+						if (camSettings)
+						{
+							camerasComboBox.selectedItem = camSettings.cameraName;
+							_currentCamera = Camera.getCamera(cameras.getItemIndex(camSettings.cameraName).toString());
+							event = new ConfigureWebCamEvent(ConfigureWebCamEvent.SELECTED_CAMERA_CHANGED);
+							event.camera = _currentCamera;
+							dispatchEvent(event);
+							_currentCamera.setMode(camSettings.width, camSettings.height, camSettings.fps, camSettings.favorArea);
+							_currentCamera.setKeyFrameInterval(camSettings.keyframeInterval);
+							_currentCamera.setMotionLevel(camSettings.motionLevel, camSettings.motionTimeout);
+							_currentCamera.setQuality(camSettings.bandwidth, camSettings.quality);
+							updateControlGUIToCameraValues();
+						}
+						
+						micSettings = _settings.microphoneSettings;
+						if (micSettings)
+						{
+							microphonesComboBox.selectedItem = micSettings.microphoneName;
+							_currentMicrophone = Microphone.getMicrophone(microphonesComboBox.selectedIndex);
+							event = new ConfigureWebCamEvent(ConfigureWebCamEvent.SELECTED_MICROPHONE_CHANGED);
+							event.microphone = _currentMicrophone;
+							dispatchEvent(event);
+							_currentMicrophone.setSilenceLevel(micSettings.silenceLevel, micSettings.silenceTimeout);
+							_currentMicrophone.setUseEchoSuppression(micSettings.echoSuppression);
+							_currentMicrophone.codec = micSettings.codec;
+							codecRadioButtonGroup.selectedValue = _currentMicrophone.codec;
+							//Debug.debug(("micSettings.speexQuality: " + micSettings.speexQuality));
+							_currentMicrophone.encodeQuality = micSettings.speexQuality;
+							_currentMicrophone.framesPerPacket = micSettings.framesPerPacket;
+							_currentMicrophone.gain = micSettings.gain;
+							_currentMicrophone.rate = micSettings.rate;
+							onSetAudioCodec();
+							updateControlGUIToCameraValues();
+						}
+					}
+					_settings = null;
+				}
+			}
+			
+			private function startCameraTimer():void
+			{
+				if (cameraTimer == null)
+				{
+					cameraTimer = new Timer(1000);
+					cameraTimer.addEventListener(TimerEvent.TIMER, onTick);
+				}
+				cameraTimer.reset();
+				cameraTimer.start();
+			}
+			
+			private function applyAudioCodec(value:String):void
+			{
+				try
+				{
+					switch(value.toLowerCase())
+					{
+						case "nellymoser":
+						case "nelly moser":
+							currentMicrophone.codec = "nellymoser";
+							break;
+						
+						case "speex":
+							currentMicrophone.codec = "speex";
+							break;
+						
+						default:
+							throw new Error("Unknown codec.");
+							break;
+					}
+				}
+				catch(err:Error)
+				{
+					Debug.error("Unknown audio codec '" + value + "'.");
+				}
+			}
+			
+			private function updateControlGUIToCameraValues():void
+			{
+				if (currentCamera)
+				{
+					bandwidthSlider.value 				= currentCamera.bandwidth;
+					framerateNumericStepper.value 		= currentCamera.fps;
+					heightNumericStepper.value 			= currentCamera.height;
+					keyframeIntervalSlider.value 		= currentCamera.keyFrameInterval;
+					loopbackCheckBox.selected 			= currentCamera.loopback;
+					motionLevelSlider.value 			= currentCamera.motionLevel;
+					motionTimeoutNumericStepper.value 	= currentCamera.motionTimeout;
+					qualitySlider.value 				= currentCamera.quality;
+					widthNumericStepper.value 			= currentCamera.width;
+				}
+				
+				if (currentMicrophone)
+				{
+					codecRadioButtonGroup.selectedValue = currentMicrophone.codec;
+					//Debug.debug(("currentMicrophone.encodeQuality: " + currentMicrophone.encodeQuality));
+					if(speexQualitySlider)
+					{
+						speexQualitySlider.value 			= currentMicrophone.encodeQuality;
+						framesPerPacketSlider.value 		= currentMicrophone.framesPerPacket;
+					}
+					gainSlider.value 					= currentMicrophone.gain;
+					rateComboBox.selectedItem 			= currentMicrophone.rate;
+					silenceLevelSlider.value 			= currentMicrophone.silenceLevel;
+					silenceTimeoutNumericStepper.value 	= currentMicrophone.silenceTimeout;
+					echoSuppressionCheckBox.selected 	= currentMicrophone.useEchoSuppression;
+				}
+			}
+			
+			private function onTick(_arg1:TimerEvent):void
+			{
+				cameraInfoText 			= "";
+				microphoneInfoText 		= "";
+				if (currentCamera)
+				{
+					cameraInfoText = (cameraInfoText + (("Activity Level: " + currentCamera.activityLevel) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Bandwidth: " + currentCamera.bandwidth) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Current FPS: " + currentCamera.currentFPS) + "\n"));
+					cameraInfoText = (cameraInfoText + (("FPS: " + currentCamera.fps) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Height: " + currentCamera.height) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Index: " + currentCamera.index) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Keyframe Interval: " + currentCamera.keyFrameInterval) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Loopback: " + currentCamera.loopback) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Motion Level: " + currentCamera.motionLevel) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Motion Timeout: " + currentCamera.motionTimeout) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Muted: " + currentCamera.muted) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Name: " + currentCamera.name) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Quality: " + currentCamera.quality) + "\n"));
+					cameraInfoText = (cameraInfoText + (("Width: " + currentCamera.width) + "\n"));
+				};
+				if (currentMicrophone)
+				{
+					microphoneInfoText = (microphoneInfoText + (("Activity Level: " + currentMicrophone.activityLevel) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Codec: " + currentMicrophone.codec) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Encode Quality: " + currentMicrophone.encodeQuality) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Frames Per Packet: " + currentMicrophone.framesPerPacket) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Gain: " + currentMicrophone.gain) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Index: " + currentMicrophone.index) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Muted: " + currentMicrophone.muted) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Name: " + currentMicrophone.name) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Rate: " + currentMicrophone.rate) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Silence Level: " + currentMicrophone.silenceLevel) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Silence Timeout: " + currentMicrophone.silenceTimeout) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Volume: " + currentMicrophone.soundTransform.volume) + "\n"));
+					microphoneInfoText = (microphoneInfoText + (("Use Echo Suppression: " + currentMicrophone.useEchoSuppression) + "\n"));
+				};
+				cameraInfoTextArea.text 		= cameraInfoText;
+				microphoneInfoTextArea.text 	= microphoneInfoText;
+			}
+			
+			private function updateSelectedCamera():void
+			{
+				var cam:Camera = Camera.getCamera(camerasComboBox.selectedIndex.toString());
+				currentCamera = cam;
+			}
+			
+			private function updateSelectedMicrophone():void
+			{
+				var mic:Microphone = Microphone.getMicrophone(microphonesComboBox.selectedIndex);
+				currentMicrophone = mic;
+			}
+			
+			private function onSetLoopback():void
+			{
+				if (currentCamera)
+					currentCamera.setLoopback(loopbackCheckBox.selected);
+			}
+			
+			private function onSetMode():void
+			{
+				//Debug.log(((((((("ConfigureWebCam::onSetMode, width: " + widthNumericStepper.value) + ", height: ") + heightNumericStepper.value) + ", fps: ") + framerateNumericStepper.value) + ", favor area: ") + favorAreaCheckBox.selected));
+				if (currentCamera)
+					currentCamera.setMode(widthNumericStepper.value, heightNumericStepper.value, framerateNumericStepper.value, favorAreaCheckBox.selected);
+			}
+			
+			private function onSetMotionLevel():void
+			{
+				if(currentCamera)
+					currentCamera.setMotionLevel(motionLevelSlider.value, motionTimeoutNumericStepper.value);
+			}
+			
+			private function onSetQuality():void
+			{
+				//Debug.log(((("ConfigureWebCam::onSetQuality, bandwidth: " + formatBytes(bandwidthSlider.value)) + ", quality: ") + qualitySlider.value));
+				bandwidthLabel.text = formatBytes(bandwidthSlider.value);
+				if (currentCamera)
+					currentCamera.setQuality(bandwidthSlider.value, qualitySlider.value);	
+			}
+			
+			private function onUpdateKeyframeInterval():void
+			{
+				if (currentCamera)
+					currentCamera.setKeyFrameInterval(keyframeIntervalSlider.value);
+			}
+			
+			private function onSetMicrophoneLoopback():void{
+				if (currentMicrophone)
+					currentMicrophone.setLoopBack(microphoneLoopbackCheckBox.selected);
+			}
+			
+			private function onSetSilenceLevel():void{
+				if (currentMicrophone)
+					currentMicrophone.setSilenceLevel(silenceLevelSlider.value, silenceTimeoutNumericStepper.value);
+			}
+			
+			private function onUseEchoSuppression():void{
+				if (currentMicrophone)
+					currentMicrophone.setUseEchoSuppression(echoSuppressionCheckBox.selected);
+			}
+			
+			private function formatBytes(bytes:Number):String
+			{
+				bytesValue = Math.round((bytes / 0x0400));
+				return ((bytesValue + " kb"));
+			}
+			
+			private function onSetAudioCodec():void
+			{
+				if (currentMicrophone)
+				{
+					if (codecRadioButtonGroup.selectedValue)
+						applyAudioCodec(codecRadioButtonGroup.selectedValue as String);
+					
+					if (currentMicrophone.codec == SoundCodec.NELLYMOSER.toLowerCase())
+					{
+						/*
+						if (enableVADFormItem.parent)
+						{
+							microphoneForm.removeElement(enableVADFormItem);
+							microphoneForm.removeElement(speexQualityFormItem);
+							microphoneForm.removeElement(framesPerPacketFormItem);
+							microphoneForm.removeElement(noiseSuppressionLevelFormItem);
+						}
+						
+						if (rateFormItem.parent == null)
+								microphoneForm.addElementAt(rateFormItem, (microphoneForm.getChildIndex(gainFormItem) + 1));
+						*/
+						currentState = "speex";
+					}
+					else
+					{
+						if (currentMicrophone.codec == SoundCodec.SPEEX.toLowerCase())
+						{
+							/*
+							if (enableVADFormItem.parent == null)
+							{
+								microphoneForm.addElementAt(enableVADFormItem, (microphoneForm.getChildIndex(codecFormItem) + 1));
+								microphoneForm.addElementAt(speexQualityFormItem, (microphoneForm.getChildIndex(enableVADFormItem) + 1));
+								microphoneForm.addElementAt(framesPerPacketFormItem, (microphoneForm.getChildIndex(speexQualityFormItem) + 1));
+								microphoneForm.addElementAt(noiseSuppressionLevelFormItem, (microphoneForm.getChildIndex(framesPerPacketFormItem) + 1));
+							}
+							
+							if (rateFormItem.parent)
+								microphoneForm.removeElement(rateFormItem);
+							
+							
+							rateFormItem.includeInLayout = rateFormItem.visible = false;
+							*/
+							currentState = "main";
+						}
+					}
+				}
+			}
+			private function onEnableVAD():void
+			{
+				// TODO
+			}
+			
+			private function onChangeSpeexQuality():void{
+				if (currentMicrophone)
+					currentMicrophone.encodeQuality = speexQualitySlider.value;
+			}
+			
+			private function onSetFramesPerPacket():void{
+				if (currentMicrophone)
+					currentMicrophone.framesPerPacket = framesPerPacketSlider.value;
+			}
+			
+			private function onSetGain():void{
+				if (currentMicrophone)
+					currentMicrophone.gain = gainSlider.value;
+			}
+			
+			private function onSetRate():void{
+				if (currentMicrophone)
+					currentMicrophone.rate = (rateComboBox.selectedItem as Number);
+			}
+			
+			private function onSetNoiseSuppressionLevel():void
+			{
+				// TODO
+			}
+			
+			private function onSaveSettings():void
+			{
+				var camSettings:CameraSettingsVO;
+				var micSettings:MicrophoneSettingsVO;
+				var settings:SettingsVO;
+				var event:ConfigureWebCamEvent;
+				dispatchEvent(new ConfigureWebCamEvent(ConfigureWebCamEvent.SAVE_SETTINGS));
+				if (currentCamera)
+				{
+					camSettings 						= new CameraSettingsVO();
+					camSettings.bandwidth 				= bandwidthSlider.value;
+					camSettings.cameraName 				= currentCamera.name;
+					camSettings.favorArea 				= favorAreaCheckBox.selected;
+					camSettings.fps 					= framerateNumericStepper.value;
+					camSettings.height 					= heightNumericStepper.value;
+					camSettings.keyframeInterval 		= keyframeIntervalSlider.value;
+					camSettings.motionLevel 			= motionLevelSlider.value;
+					camSettings.motionTimeout 			= motionTimeoutNumericStepper.value;
+					camSettings.quality 				= qualitySlider.value;
+					camSettings.width 					= widthNumericStepper.value;
+				}
+				
+				if (currentMicrophone)
+				{
+					micSettings 						= new MicrophoneSettingsVO();
+					micSettings.codec 					= (codecRadioButtonGroup.selectedValue as String);
+					micSettings.echoSuppression 		= echoSuppressionCheckBox.selected;
+					micSettings.enableVAD 				= enableVADCheckBox.selected;
+					micSettings.framesPerPacket 		= framesPerPacketSlider.value;
+					micSettings.gain 					= gainSlider.value;
+					micSettings.microphoneName 			= currentMicrophone.name;
+					micSettings.noiseSuppressionLevel 	= noiseSuppressionSlider.value;
+					micSettings.rate 					= rateComboBox.selectedItem;
+					micSettings.silenceLevel 			= silenceLevelSlider.value;
+					micSettings.silenceTimeout 			= silenceTimeoutNumericStepper.value;
+					micSettings.speexQuality 			= speexQualitySlider.value;
+				}
+				
+				if ((camSettings != null) || (micSettings != null))
+				{
+					settings 							= new SettingsVO();
+					settings.cameraSettings 			= camSettings;
+					settings.microphoneSettings 		= micSettings;
+					event 								= new ConfigureWebCamEvent(ConfigureWebCamEvent.SAVE_SETTINGS);
+					event.settings 						= settings;
+					dispatchEvent(event);
+				}
+			}
+			
+			private function onLoadSettings():void
+			{
+				dispatchEvent(new ConfigureWebCamEvent(ConfigureWebCamEvent.LOAD_SETTINGS));
+			}
+			
+			
+			
+		]]>
+	</fx:Script>
+	
+	<s:states>
+		<s:State name="main" />
+		<s:State name="speex" />
+	</s:states>
+	
+	<fx:Declarations>
+		<s:RadioButtonGroup id="codecRadioButtonGroup" />
+	</fx:Declarations>
+	
+	<s:HGroup>
+		<s:Button label="Load Settings" click="onLoadSettings()" />
+		<s:Button label="Save Settings" click="onSaveSettings()" />
+	</s:HGroup>
+	
+	<s:HGroup>
+		
+		<s:Form>
+			<s:FormHeading label="Camera Settings" />
+			<s:FormItem label="Cameras:">
+				<s:ComboBox id="camerasComboBox" dataProvider="{cameras}" change="updateSelectedCamera()" />
+			</s:FormItem>
+			<s:FormItem label="Keyframe Interval:">
+				<s:HSlider id="keyframeIntervalSlider" change="onUpdateKeyframeInterval()"
+						   minimum="1"
+						   maximum="48"
+						  stepSize="1"/>
+			</s:FormItem>
+			<s:FormItem label="Loopback:">
+				<s:CheckBox id="loopbackCheckBox" change="onSetLoopback()" />
+			</s:FormItem>
+			<s:Form backgroundColor="#B8B8B8">
+				<s:FormItem label="Width:">
+					<s:NumericStepper id="widthNumericStepper"
+									  minimum="20"
+									  maximum="720"
+									  stepSize="1"/>
+				</s:FormItem>
+				<s:FormItem label="Height:">
+					<s:NumericStepper id="heightNumericStepper" 
+									  minimum="20"
+									  maximum="480"
+									  stepSize="1"/>
+				</s:FormItem>
+				<s:FormItem label="Framerate:">
+					<s:NumericStepper id="framerateNumericStepper"
+									  minimum="1"
+									  maximum="120"
+									  stepSize="1"/>
+				</s:FormItem>
+				<s:FormItem label="Favor Area:">
+					<s:CheckBox id="favorAreaCheckBox" />
+				</s:FormItem>
+				<s:Button label="Update" click="onSetMode()" />
+			</s:Form>
+			<s:FormItem label="Motion Level:">
+				<s:HSlider id="motionLevelSlider" change="onSetMotionLevel()"
+						   minimum="0"
+						   maximum="100"
+						   stepSize="1"
+						   value="50"/>
+			</s:FormItem>
+			<s:FormItem label="Motion Timeout:">
+				<s:NumericStepper id="motionTimeoutNumericStepper"
+								  stepSize="100"
+								  minimum="0"
+								  maximum="10000" />
+			</s:FormItem>
+			<s:FormItem label="Bandwidth:">
+				<s:HSlider id="bandwidthSlider" change="onSetQuality()"
+						   minimum="0"
+						   maximum="1024000"
+						   stepSize="0x2800"
+						   value="0x4000"/>
+				<s:Label id="bandwidthLabel" />
+			</s:FormItem>
+			<s:FormItem label="Quality:">
+				<s:HSlider id="qualitySlider"
+						   minimum="0"
+						   maximum="100"
+						   stepSize="1"
+						   value="50"/>
+			</s:FormItem>
+			<s:TextArea id="cameraInfoTextArea" width="294" height="236" fontSize="11" />
+		</s:Form>
+		
+		<s:Form id="microphoneForm">
+			<s:FormHeading label="Microphone Settings" />
+			<s:FormItem label="Microphones:">
+				<s:ComboBox id="microphonesComboBox" dataProvider="{microphones}" change="updateSelectedMicrophone()" />
+			</s:FormItem>
+			<s:FormItem label="Loopback:">
+				<s:CheckBox id="microphoneLoopbackCheckBox" />
+			</s:FormItem>
+			<s:FormItem label="Codec:" id="codecFormItem">
+				<s:RadioButton label="Speex" groupName="codecRadioButtonGroup" change="onSetAudioCodec()"/>
+				<s:RadioButton label="Nelly Moser" groupName="codecRadioButtonGroup" change="onSetAudioCodec()" />
+			</s:FormItem>
+			<s:FormItem label="Enable VAD:" id="enableVADFormItem" includeIn="speex">
+				<s:CheckBox id="enableVADCheckBox" change="onEnableVAD()" />
+			</s:FormItem>
+			<s:FormItem label="Speex Quality:" id="speexQualityFormItem" includeIn="speex">
+				<s:HSlider id="speexQualitySlider" change="onChangeSpeexQuality()" />
+			</s:FormItem>
+			<s:FormItem label="Frames Per Packet:" id="framesPerPacketFormItem" includeIn="speex">
+				<s:HSlider id="framesPerPacketSlider" change="onSetFramesPerPacket()" />
+			</s:FormItem>
+			<s:FormItem label="Noise Suppresion:" id="noiseSuppressionLevelFormItem" includeIn="speex">
+				<s:HSlider id="noiseSuppressionSlider" change="onSetNoiseSuppressionLevel()" />
+			</s:FormItem>
+			<s:FormItem label="Gain:" id="gainFormItem">
+				<s:HSlider id="gainSlider" change="onSetGain()" />
+			</s:FormItem>
+			<s:FormItem label="Rate:" id="rateFormItem" includeIn="main">
+				<s:ComboBox id="rateComboBox" change="onSetRate()">
+					<s:dataProvider>
+						<s:ArrayList>
+							<fx:Number>44</fx:Number>
+							<fx:Number>22</fx:Number>
+							<fx:Number>16</fx:Number>
+							<fx:Number>11</fx:Number>
+							<fx:Number>8</fx:Number>
+							<fx:Number>5</fx:Number>
+						</s:ArrayList>
+					</s:dataProvider>
+				</s:ComboBox>
+			</s:FormItem>
+			<s:FormItem label="Silence Level:">
+				<s:HSlider id="silenceLevelSlider" change="onSetSilenceLevel()" />
+			</s:FormItem>
+			<s:FormItem label="Timeout:">
+				<s:NumericStepper id="silenceTimeoutNumericStepper" change="onSetSilenceLevel()" />
+			</s:FormItem>
+			<s:FormItem label="Echo Suppression:">
+				<s:CheckBox id="echoSuppressionCheckBox" change="onUseEchoSuppression()" />
+			</s:FormItem>
+		</s:Form>
+		<s:TextArea id="microphoneInfoTextArea" width="282" height="236" fontSize="11" />
+	</s:HGroup>
+
+</s:Group>

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" 
+		 width="100%" height="100%" xmlns:controls="com.jxl.coreplay.controls.*" xmlns:controls1="com.jxl.webcamrecord.controls.*">
+	
+	<fx:Script>
+		<![CDATA[
+			import mx.collections.ArrayCollection;
+			
+			private var _currentCamera:Camera;
+			private var currentCameraDirty:Boolean = false;
+			private var _currentMicrophone:Microphone;
+			private var currentMicrophoneDirty:Boolean = false;
+			private var micTimer:Sprite;
+			
+			[Bindable]
+			public var cameras:ArrayCollection;
+			
+			[Bindable]
+			public var microphones:ArrayCollection;
+			
+			public function get currentCamera():Camera { return _currentCamera; }
+			public function set currentCamera(value:Camera):void
+			{
+				_currentCamera = value;
+				currentCameraDirty = true;
+				invalidateProperties();
+			}
+			
+			public function get currentMicrophone():Microphone { return _currentMicrophone; }
+			public function set currentMicrophone(value:Microphone):void
+			{
+				_currentMicrophone = value;
+				currentMicrophoneDirty = true;
+				invalidateProperties();
+			}
+			
+			override protected function commitProperties():void{
+				super.commitProperties();
+				
+				if (currentCameraDirty)
+				{
+					currentCameraDirty = false;
+					webCam.camera = _currentCamera;
+				};
+				if (currentMicrophoneDirty)
+				{
+					currentMicrophoneDirty = false;
+					volumeBar.value = currentMicrophone.activityLevel;
+					if (currentMicrophone)
+					{
+						startMicTimer();
+					} else
+					{
+						stopMicTimer();
+					};
+				};
+			}
+			
+			private function startMicTimer():void
+			{
+				if (micTimer == null)
+					micTimer = new Sprite();
+				
+				micTimer.addEventListener(Event.ENTER_FRAME, onTick);
+			}
+			
+			private function stopMicTimer():void
+			{
+				if (micTimer)
+					micTimer.removeEventListener(Event.ENTER_FRAME, onTick);
+			}
+			
+			private function onTick(event:Event):void
+			{
+				if (currentMicrophone)
+					volumeBar.value = currentMicrophone.activityLevel;
+			}
+			
+		]]>
+	</fx:Script>
+
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+
+	<controls:UIWebCam id="webCam" />
+	<controls:VolumeBar id="volumeBar" x="302" y="74" />
+	<controls1:ConfigureWebCam2 x="328" />
+	
+	
+</s:Group>
